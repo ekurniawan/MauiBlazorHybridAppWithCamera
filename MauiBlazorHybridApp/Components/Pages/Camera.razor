@@ -1,0 +1,73 @@
+@page "/camera"
+@using Microsoft.Maui.Storage
+@inject IDispatcher Dispatcher
+
+<h3>Camera</h3>
+<p>@message</p>
+
+<button class="btn btn-primary" @onclick="TakePhoto">Take Photo</button>
+
+@if (!string.IsNullOrEmpty(imageDataUrl))
+{
+    <div class="mt-3">
+        <img src="@imageDataUrl" style="max-width:100%; height:auto;" />
+    </div>
+}
+
+@code {
+    private string message = "Request camera permission and take a photo.";
+    private string imageDataUrl;
+
+    private async Task<bool> CheckAndRequestCameraPermission()
+    {
+        try
+        {
+            var status = await Permissions.CheckStatusAsync<Permissions.Camera>();
+            if (status != PermissionStatus.Granted)
+            {
+                status = await Permissions.RequestAsync<Permissions.Camera>();
+            }
+
+            return status == PermissionStatus.Granted;
+        }
+        catch (Exception ex)
+        {
+            message = "Could not request permission: " + ex.Message;
+            return false;
+        }
+    }
+
+    private async Task TakePhoto()
+    {
+        if (!await CheckAndRequestCameraPermission())
+        {
+            message = "Camera permission denied.";
+            return;
+        }
+
+        try
+        {
+            var result = await MediaPicker.Default.CapturePhotoAsync();
+            if (result == null)
+            {
+                message = "No photo captured.";
+                return;
+            }
+
+            // Save the file to cache and display as data URL
+            var stream = await result.OpenReadAsync();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            imageDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(bytes)}";
+            message = "Photo captured.";
+
+            // Force UI update on main thread
+            await Dispatcher.DispatchAsync(() => { });
+        }
+        catch (Exception ex)
+        {
+            message = "Error capturing photo: " + ex.Message;
+        }
+    }
+}
