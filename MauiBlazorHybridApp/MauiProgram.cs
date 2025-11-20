@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Maui.Devices.Sensors;
+using Microsoft.Maui.Devices;
 
 namespace MauiBlazorHybridApp
 {
@@ -15,10 +17,12 @@ namespace MauiBlazorHybridApp
                 });
 
             builder.Services.AddMauiBlazorWebView();
+            builder.Services.AddSingleton<IGeolocation>(sp => Geolocation.Default);
+            builder.Services.AddSingleton<IGeocoding>(sp => Geocoding.Default);
 
 #if DEBUG
-    		builder.Services.AddBlazorWebViewDeveloperTools();
-    		builder.Logging.AddDebug();
+			builder.Services.AddBlazorWebViewDeveloperTools();
+			builder.Logging.AddDebug();
 #endif
 
             return builder.Build();

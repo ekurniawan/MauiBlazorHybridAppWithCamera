@@ -1,0 +1,155 @@
+@page "/geolocation"
+@using System.Threading
+@using Microsoft.Maui.Devices.Sensors
+@using Microsoft.Maui.ApplicationModel
+@inject Microsoft.Maui.Devices.Sensors.IGeolocation GeolocationService
+@inject Microsoft.Maui.Devices.Sensors.IGeocoding GeocodingService
+
+<h3>Geolocation</h3>
+<p>@statusMessage</p>
+
+<div class="mb-3">
+    <label for="accuracy" class="form-label">Desired accuracy (meters)</label>
+    <input id="accuracy" class="form-control" @bind="desiredAccuracy" type="number" />
+</div>
+
+<button class="btn btn-primary me-2" @onclick="GetLocationOnce">Get Location</button>
+<button class="btn btn-secondary" @onclick="GetLocationWithTimeout">Get Location (with timeout)</button>
+
+@if (location != null)
+{
+    <div class="mt-3">
+        <p><strong>Latitude:</strong> @location.Latitude</p>
+        <p><strong>Longitude:</strong> @location.Longitude</p>
+        <p><strong>Altitude:</strong> @location.Altitude</p>
+        <p><strong>Accuracy:</strong> @location.Accuracy</p>
+        <p><strong>Timestamp:</strong> @location.Timestamp</p>
+        @if (!string.IsNullOrEmpty(address))
+        {
+            <p><strong>Address:</strong> @address</p>
+        }
+    </div>
+}
+
+@code {
+    private string statusMessage = "Enter desired accuracy in meters and click Get Location.";
+    private double desiredAccuracy = 100; // meters
+    private Location location;
+    private string address;
+
+    private async Task<bool> CheckAndRequestLocationPermission()
+    {
+        try
+        {
+            var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+            if (status != PermissionStatus.Granted)
+            {
+                status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+            }
+
+            return status == PermissionStatus.Granted;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Permission error: " + ex.Message;
+            return false;
+        }
+    }
+
+    private async Task GetLocationOnce()
+    {
+        if (!await CheckAndRequestLocationPermission())
+        {
+            statusMessage = "Location permission denied.";
+            return;
+        }
+
+        try
+        {
+            var request = new GeolocationRequest(GeolocationAccuracy.Default, TimeSpan.FromSeconds(30));
+
+            statusMessage = "Getting location...";
+            location = await GeolocationService.GetLocationAsync(request);
+
+            if (location == null)
+            {
+                statusMessage = "Location not available.";
+                address = null;
+            }
+            else
+            {
+                statusMessage = "Location obtained.";
+                await TryResolveAddress(location);
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Error getting location: " + ex.Message;
+            address = null;
+        }
+    }
+
+    private async Task GetLocationWithTimeout()
+    {
+        if (!await CheckAndRequestLocationPermission())
+        {
+            statusMessage = "Location permission denied.";
+            return;
+        }
+
+        try
+        {
+            statusMessage = "Getting location with timeout...";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var request = new GeolocationRequest(GeolocationAccuracy.Default, TimeSpan.FromSeconds(10));
+            location = await GeolocationService.GetLocationAsync(request, cts.Token);
+
+            if (location == null)
+            {
+                statusMessage = "Location not available.";
+                address = null;
+            }
+            else
+            {
+                statusMessage = "Location obtained.";
+                await TryResolveAddress(location);
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Error getting location: " + ex.Message;
+            address = null;
+        }
+    }
+
+    private async Task TryResolveAddress(Location loc)
+    {
+        try
+        {
+            address = "Resolving address...";
+            var placemarks = await GeocodingService.GetPlacemarksAsync(loc.Latitude, loc.Longitude);
+            var placemark = placemarks?.FirstOrDefault();
+            if (placemark == null)
+            {
+                address = "Address not found.";
+                return;
+            }
+
+            // Build a readable address from available placemark fields
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(placemark.Thoroughfare)) parts.Add(placemark.Thoroughfare);
+            if (!string.IsNullOrWhiteSpace(placemark.SubThoroughfare)) parts.Add(placemark.SubThoroughfare);
+            if (!string.IsNullOrWhiteSpace(placemark.Locality)) parts.Add(placemark.Locality);
+            if (!string.IsNullOrWhiteSpace(placemark.SubLocality)) parts.Add(placemark.SubLocality);
+            if (!string.IsNullOrWhiteSpace(placemark.AdminArea)) parts.Add(placemark.AdminArea);
+            if (!string.IsNullOrWhiteSpace(placemark.PostalCode)) parts.Add(placemark.PostalCode);
+            if (!string.IsNullOrWhiteSpace(placemark.CountryName)) parts.Add(placemark.CountryName);
+
+            address = parts.Count > 0 ? string.Join(", ", parts) : "Address details not available.";
+        }
+        catch (Exception ex)
+        {
+            address = "Error resolving address: " + ex.Message;
+        }
+    }
+}
